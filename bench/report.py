@@ -60,7 +60,8 @@ def to_markdown(card: Scorecard) -> str:
         lines.append(header)
         lines.append(sep)
         for t, m in card.tracks.items():
-            cells = [_fmt(c, m.get(c, 0.0)) for c in cols]
+            # Missing answer-quality keys (retrieval-only systems) render as "—".
+            cells = [(_fmt(c, m[c]) if c in m else "—") for c in cols]
             cells.append(_fmt("latency_ms_p50", m.get("latency_ms_p50", 0.0)))
             lines.append(f"| {t} | " + " | ".join(cells) + " |")
         lines.append("")

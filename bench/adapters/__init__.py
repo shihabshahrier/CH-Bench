@@ -10,12 +10,18 @@ from collections.abc import Callable
 
 from ..core.adapter import Adapter
 from .ch import CHAdapter
+from .ck import CKAdapter
 from .gbrain import GBrainAdapter
+from .mem0 import Mem0Adapter
 from .mock import MockAdapter
+from .supermemory import SupermemoryAdapter
 
 _REGISTRY: dict[str, Callable[[], Adapter]] = {
     "mock": MockAdapter,
     "ch": CHAdapter,
+    "ck": CKAdapter,
+    "mem0": Mem0Adapter,
+    "supermemory": SupermemoryAdapter,
     "gbrain": GBrainAdapter,
 }
 

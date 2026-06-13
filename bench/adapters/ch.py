@@ -53,6 +53,9 @@ class CHAdapter:
             if ingest_delay is not None
             else float(os.getenv("CH_INGEST_DELAY", "0"))
         )
+        # Pace queries to stay under a rate-limited chat/embed provider (each Ask
+        # fans out to embed + rerank + completion calls).
+        self.query_delay = float(os.getenv("CH_QUERY_DELAY", "0"))
         self.retrieval_only = (
             retrieval_only
             if retrieval_only is not None
@@ -117,17 +120,42 @@ class CHAdapter:
                 time.sleep(self.ingest_delay)
 
     def query(self, question: str, top_k: int) -> QueryResult:
-        if self.retrieval_only:
-            return self._semantic(question, top_k)
-        return self._ask(question, top_k)
+        if self.query_delay:
+            time.sleep(self.query_delay)
+        try:
+            if self.retrieval_only:
+                return self._semantic(question, top_k)
+            return self._ask(question, top_k)
+        except _http.HTTPError as e:
+            # A rate-limited / transient upstream failure on one question must
+            # not abort the whole run — score it as a miss and move on.
+            return QueryResult(answer=None, sources=[], latency_ms=0.0, raw={"error": str(e)[:200]})
+
+    def _post_retry(self, url: str, json_body: dict):
+        """POST with backoff on NIM rate limits / transient upstream errors
+        (429/500/502/503), which CH surfaces when the embed+rerank+chat chain
+        trips the 40-RPM free tier."""
+        attempts = int(os.getenv("CH_RETRIES", "4"))
+        delay = 3.0
+        last: _http.HTTPError | None = None
+        for i in range(attempts):
+            try:
+                return _http.request("POST", url, headers=self._headers(), json_body=json_body)
+            except _http.HTTPError as e:
+                if e.status not in (429, 500, 502, 503) or i == attempts - 1:
+                    raise
+                last = e
+                time.sleep(delay)
+                delay *= 1.8
+        if last:
+            raise last
+        return {}
 
     def _ask(self, question: str, top_k: int) -> QueryResult:
         t0 = time.perf_counter()
-        payload = _http.request(
-            "POST",
+        payload = self._post_retry(
             f"{self.base_url}/v1/graph/ask",
-            headers=self._headers(),
-            json_body={"query": question, "top_k": top_k, "mode": self.ask_mode},
+            {"query": question, "top_k": top_k, "mode": self.ask_mode},
         )
         dt = (time.perf_counter() - t0) * 1000
         answer = payload.get("answer") if isinstance(payload, dict) else None

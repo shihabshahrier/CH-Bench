@@ -74,19 +74,19 @@ def _aggregate(rows: list[QuestionResult], judged: bool) -> dict[str, float]:
         "tokens_mean": _mean([float(r.tokens) for r in rows]),
     }
     if judged:
-        answerable = [r for r in rows if not r.expect_abstain]
-        abstainers = [r for r in rows if r.expect_abstain]
-        out["correctness"] = _mean([r.correctness or 0.0 for r in answerable])
-        # Over the abstention subset: did the system correctly decline?
-        if abstainers:
-            out["abstention_accuracy"] = _mean(
-                [r.abstain_correct or 0.0 for r in abstainers]
-            )
-        # Over answerable questions: how often did it wrongly bail out?
+        # Only emit answer-quality metrics for rows that were actually judged
+        # (a synthesized answer existed). Retrieval-only systems return
+        # answer=None → no judged rows → these keys are omitted entirely, so the
+        # scorecard shows "—" rather than a misleading 0%.
+        answerable = [r for r in rows if not r.expect_abstain and r.correctness is not None]
+        abstainers = [r for r in rows if r.expect_abstain and r.abstain_correct is not None]
+        false_abst = [r for r in rows if not r.expect_abstain and r.abstained is not None]
         if answerable:
-            out["false_abstention"] = _mean(
-                [1.0 if r.abstained else 0.0 for r in answerable]
-            )
+            out["correctness"] = _mean([r.correctness for r in answerable])
+        if abstainers:
+            out["abstention_accuracy"] = _mean([r.abstain_correct for r in abstainers])
+        if false_abst:
+            out["false_abstention"] = _mean([1.0 if r.abstained else 0.0 for r in false_abst])
     return out
 
 
@@ -131,8 +131,12 @@ def run(
         res = adapter.query(q.question, top_k=k)
         ranked = res.ranked_ids()
 
+        # Only score answer correctness for systems that synthesize an answer.
+        # Retrieval-only systems (mem0/supermemory search, ck grep, CH semantic
+        # mode) return answer=None — they get retrieval metrics, not answer
+        # metrics, so correctness aggregates fairly over answering systems only.
         verdict = None
-        if judged and (q.answer is not None or q.expect_abstain):
+        if judged and res.answer is not None and (q.answer is not None or q.expect_abstain):
             verdict = judge.grade(q.question, q.answer, res.answer)
 
         correctness = verdict.correctness if verdict else None
