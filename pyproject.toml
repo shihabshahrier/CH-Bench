@@ -1,0 +1,29 @@
+[project]
+name = "contextheavy-bench"
+version = "0.1.0"
+description = "A memory/RAG benchmark for AI brains — scores Context-Heavy and competitors on standard suites (LongMemEval, LoCoMo) plus profession-based real-usage tracks."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shahriar" }]
+keywords = ["benchmark", "memory", "rag", "llm", "retrieval", "agents"]
+# Zero runtime dependencies on purpose: the harness uses only the Python stdlib
+# (urllib for HTTP, json, dataclasses) so it runs in CI and offline with no
+# install step. Adapters that need a vendor SDK declare it as an optional extra.
+dependencies = []
+
+[project.optional-dependencies]
+# Competitor adapters that ship Python SDKs. Install only what you benchmark.
+mem0 = ["mem0ai>=0.1"]
+zep = ["zep-cloud>=2.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+bench = "bench.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bench"]
