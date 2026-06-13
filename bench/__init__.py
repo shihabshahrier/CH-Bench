@@ -1,4 +1,4 @@
-"""contextheavy-bench — a memory/RAG benchmark for AI brains.
+"""CH-Bench — a memory/RAG benchmark for AI brains.
 
 Public surface:
     from bench import run, Memory, Question, QueryResult

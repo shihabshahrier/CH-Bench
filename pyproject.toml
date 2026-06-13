@@ -1,5 +1,5 @@
 [project]
-name = "contextheavy-bench"
+name = "ch-bench"
 version = "0.1.0"
 description = "A memory/RAG benchmark for AI brains — scores Context-Heavy and competitors on standard suites (LongMemEval, LoCoMo) plus profession-based real-usage tracks."
 readme = "README.md"

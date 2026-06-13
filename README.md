@@ -1,4 +1,4 @@
-# contextheavy-bench
+# CH-Bench
 
 A memory/RAG benchmark for AI **brains** — the systems that store knowledge for
 people and agents and recall it later. It scores any brain on the same eval set
@@ -21,7 +21,7 @@ write a 4-method adapter and the same suites score your system too.
 ## Install
 
 ```bash
-cd contextheavy-bench
+cd CH-Bench
 pip install -e .          # or: PYTHONPATH=. python3 -m bench.cli ...
 ```
 
