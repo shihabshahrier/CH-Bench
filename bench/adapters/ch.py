@@ -77,17 +77,27 @@ class CHAdapter:
 
     # ── Adapter contract ──
     def reset(self) -> None:
-        # Delete only nodes this harness created (tracked ids). First run is a
-        # no-op; re-runs in the same process clean up the prior namespace.
-        for nid in self._created:
+        # Purge every leftover "bench-" node in the workspace (not just ids
+        # tracked this process) so separate CLI runs don't pollute each other's
+        # recall with stale nodes. The benchmark uses a dedicated workspace, so
+        # deleting all bench-prefixed nodes is safe.
+        for _ in range(200):  # page cap
             try:
-                _http.request(
-                    "DELETE",
-                    f"{self.base_url}/v1/nodes/{nid}",
-                    headers=self._headers(),
+                page = _http.request(
+                    "GET", f"{self.base_url}/v1/nodes",
+                    headers=self._headers(), params={"limit": 200},
                 )
             except _http.HTTPError:
-                pass
+                break
+            rows = (page.get("data") or []) if isinstance(page, dict) else []
+            victims = [r.get("id") for r in rows if str(r.get("name", "")).startswith("bench-")]
+            if not victims:
+                break
+            for nid in victims:
+                try:
+                    _http.request("DELETE", f"{self.base_url}/v1/nodes/{nid}", headers=self._headers())
+                except _http.HTTPError:
+                    pass
         self._created.clear()
         self._sys_to_suite.clear()
 

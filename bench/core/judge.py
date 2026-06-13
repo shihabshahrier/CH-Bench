@@ -57,6 +57,10 @@ class Judge:
         self.base_url = (base_url or os.getenv("JUDGE_BASE_URL", "")).rstrip("/")
         self.model = model or os.getenv("JUDGE_MODEL", "")
         self.api_key = api_key or os.getenv("JUDGE_API_KEY", "")
+        # Tried in order after the primary on 429/5xx/timeout, so a rate-limited
+        # judge fails over to the next reasoning model instead of dropping to the
+        # heuristic. Comma-separated JUDGE_FALLBACK_MODELS.
+        self.fallbacks = [m.strip() for m in os.getenv("JUDGE_FALLBACK_MODELS", "").split(",") if m.strip()]
         self.timeout = timeout
 
     @property
@@ -93,9 +97,26 @@ class Judge:
         )
 
     def _chat(self, system: str, user: str) -> str:
+        last: Exception | None = None
+        for model in [self.model, *self.fallbacks]:
+            try:
+                return self._chat_once(model, system, user)
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code in (429, 500, 502, 503) and model != ([self.model, *self.fallbacks][-1]):
+                    continue  # rate-limited / transient → next model
+                raise
+            except (urllib.error.URLError, TimeoutError):
+                last = None
+                continue  # transport/timeout → next model
+        if last:
+            raise last
+        raise urllib.error.URLError("all judge models failed")
+
+    def _chat_once(self, model: str, system: str, user: str) -> str:
         body = json.dumps(
             {
-                "model": self.model,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},

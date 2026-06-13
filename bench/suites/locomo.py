@@ -13,6 +13,7 @@ track. Adapter-agnostic, so the same questions can hit any system.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,12 @@ class LoCoMoSuite:
                 "LOCOMO_FILE, or place locomo10.json under datasets/locomo/data/."
             )
         self._samples = json.loads(self.path.read_text())
+        # Full LoCoMo is thousands of turns — too many embeds for a budgeted
+        # subset. LOCOMO_SAMPLES caps how many conversation samples load (and
+        # thus the corpus); questions are still capped separately via --limit.
+        n = os.getenv("LOCOMO_SAMPLES")
+        if n and n.isdigit():
+            self._samples = self._samples[: int(n)]
 
     def _iter_turns(self):
         """Yield (sample_idx, dialog_id, speaker, text) for every turn."""
@@ -64,7 +71,15 @@ class LoCoMoSuite:
         out: list[Question] = []
         for s_idx, sample in enumerate(self._samples):
             for q_idx, qa in enumerate(sample.get("qa", [])):
+                # evidence is a stringified list, e.g. "['D1:3', 'D2:5']";
+                # parse it (each item is a turn dia_id) — iterating the raw
+                # string would walk characters.
                 evidence = qa.get("evidence") or []
+                if isinstance(evidence, str):
+                    try:
+                        evidence = ast.literal_eval(evidence)
+                    except (ValueError, SyntaxError):
+                        evidence = []
                 relevant = [f"{s_idx}:{e}" for e in evidence]
                 ans = qa.get("answer")
                 out.append(

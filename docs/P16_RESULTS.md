@@ -1,4 +1,41 @@
-# P16 — First comparison run (ContextHeavy-Bench)
+# P16 / P16.5 — comparison runs (ContextHeavy-Bench)
+
+## P16.5 — after the fixes (deepened suite) — HEADLINE
+
+After the P16.5 fixes (rerank-blend, OpenRouter bge-m3 embeds, model failover) and
+a **harder, deeper suite** (5 tracks, 35 questions, 15 hard paraphrase/multi-hop/
+temporal items), re-run 6 systems · k=10 · LLM-judge llama-3.3-70b · 2026-06-13:
+
+| system | recall@10 | nDCG@10 | MRR | answer correctness | abstention | latency p50 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **ch** | 85.7% | **81.3%** | **80.0%** | **100%** | **100%** | 8320ms |
+| supermemory | 85.7% | **83.8%** | 82.9% | — | — | 1202ms |
+| gbrain | 85.7% | 79.5% | 77.5% | — | — | 3031ms |
+| mock (BM25) | 77.1% | 68.7% | 66.4% | 68.3% | 0% | 0ms |
+| ck | 71.4% | 64.6% | 62.4% | — | — | 49ms |
+| mem0 | 22.9% | 21.3% | 17.6% | — | — | 1249ms |
+
+**Findings:**
+- **CH now beats gbrain on ranking** (nDCG 81.3 vs 79.5, MRR 80.0 vs 77.5) and ties
+  recall — on the *same* embedder (bge-m3@1024), so it's an architecture win, not a
+  model edge. The rerank-blend fix drove it (nDCG 62→76.6→81.3 across suites).
+- **CH is the only system that answers** (100% correctness + abstention). The rest
+  return chunks. On the answer axis nobody competes.
+- **Still open:** supermemory leads raw ranking (83.8) — closeable via query-aware
+  graph boosts (`COMPETITIVE_ANALYSIS.md`); and **CH latency is the weak point**
+  (8.3s vs supermemory 1.2s / gbrain 3.0s) — the answer tax, a dedicated budget pass.
+- **The harder suite discriminates:** BM25 mock fell 84.2→77.1 and ck 78.9→71.4 vs
+  the easy P16 suite — paraphrase/multi-hop defeats lexical matching, so the suite
+  now separates semantic from lexical retrieval. mem0 collapses to 22.9% (its fact-
+  extraction drops standalone memories under hard recall).
+
+P16.5 also fixed: model failover on NIM 429/5xx (qwen3.5 → llama-3.3-70b → qwen3-next-80b),
+dropped the 500-ing qwen3.5-122b, transient (not 30-min) ban on empty completions,
+async-settle for mem0/supermemory, ck per-keyword search, CH workspace purge-on-reset.
+
+---
+
+## P16 — first comparison run (baseline, easy 19-Q suite)
 
 First real numbers for Context-Heavy against the field, on the custom
 `contextheavy` suite (developer / founder / researcher profession tracks).
