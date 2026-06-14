@@ -27,11 +27,14 @@ the levers are all around the LLM call.
 1. **Answer-cache hot tier (shipped, CH `1ed02d8`).** A warm exact-query repeat
    skips the entire pipeline — embed + retrieve + rerank + graph + the dominant
    LLM call — and returns the cached answer. **Measured: cold 22.3s → warm ~0ms.**
-   Keyed by (workspace, mode, persona, top_k, normalized query, **actor**), so
-   personal-scoped answers never leak across users. Short TTL (60s) bounds
-   staleness after note edits; write-time invalidation is the next refinement.
-   This is the plan's "hot working-memory tier" — the biggest cut for warm/
-   repeated/polling traffic (an agent re-asking, a dashboard refreshing).
+   Keyed by (workspace, mode, persona, top_k, normalized query, **actor**, and a
+   per-workspace **generation**), so personal-scoped answers never leak across
+   users and a note edit invalidates instantly: any node write bumps the
+   workspace generation, so cached answers under the old generation are never
+   read again (verified live — cold→miss, warm→hit, write→miss). Short TTL (60s)
+   backstops anything missed. This is the plan's "hot working-memory tier" — the
+   biggest cut for warm/repeated/polling traffic (an agent re-asking, a
+   dashboard refreshing).
 2. **Faster chat provider / model** (infra, not code): the LLM is the floor.
    A co-located, higher-throughput endpoint (or a smaller distilled model for
    simple asks) is the only thing that moves the *cold* number. The provider-
