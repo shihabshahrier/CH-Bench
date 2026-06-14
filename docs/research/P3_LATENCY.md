@@ -36,10 +36,12 @@ the levers are all around the LLM call.
    A co-located, higher-throughput endpoint (or a smaller distilled model for
    simple asks) is the only thing that moves the *cold* number. The provider-
    pluggable pipeline already supports swapping it.
-3. **Embedding cache** (1-3s, secondary): cache query-text→vector to shave the
-   embed leg on repeats that miss the answer cache (e.g. same query, different
-   top_k). Cheaper than the answer cache to maintain (embeddings are
-   deterministic — no staleness). Candidate next step.
+3. **Embedding cache (shipped, CH `13a9b36`).** Query-text→vector cache in the
+   EmbeddingService — deterministic per (model, input_type, text), so no
+   staleness and a long TTL (6h). Shaves the embed leg on any repeat that misses
+   the answer cache (e.g. same query, different top_k), and benefits every
+   single-text caller (Ask, semantic, who-knows, create-safety). **Measured:
+   same query / different top_k → embed 5771ms → 54ms (~100x).**
 4. **Streaming** improves time-to-first-token (UX) but not total latency; orthogonal.
 
 ## Honesty notes
