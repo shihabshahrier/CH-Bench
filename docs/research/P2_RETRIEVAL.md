@@ -41,6 +41,32 @@ bge-m3), 44 memories / 35 questions. **Facts, not bias** — every number is a r
    *pace* through the pool instead of dropping. Recall recovered to 85.7%. In
    production this was silent note loss on any bulk import.
 
+## Metric-artifact correction (the bigger finding)
+
+Investigating the "researcher gap" surfaced a **benchmark bug that under-reported
+every system**: the 5 abstain questions (empty gold) were scored 0 on
+recall/nDCG/mrr and averaged into the ranking metrics. An abstain question has no
+gold to rank, so that 0 is spurious. Fixed in the runner (`has_gold` gates
+ranking aggregation; abstention is scored separately). Recomputed over all
+systems' saved per-question data — fair, no re-run:
+
+| system | recall@k | nDCG@10 | mrr | answers? |
+| --- | --- | --- | --- | --- |
+| supermemory | 100% | **97.7%** | 96.7% | no (chunks) |
+| **ch** | 100% | **95.1%** | 94.0% | **yes — 96.7% correct, 100% abstain** |
+| gbrain | 100% | 92.8% | 90.4% | no (chunks) |
+| ck | 83.3% | 75.3% | 72.8% | no |
+| mem0 | 26.7% | 24.8% | 20.5% | no |
+
+Honest read: **supermemory still leads raw ranking by ~2.6 nDCG points** (97.7 vs
+95.1) — the gap is real, not an artifact. But CH is the only system that ranks
+near-top AND returns a grounded, correct, abstaining *answer*; the others return
+chunks. CH's recall is a perfect 100% (every gold doc retrieved). The remaining
+ranking gap to supermemory is almost entirely the **researcher track** (corrected
+80.4 nDCG vs ~95+ elsewhere) — two paraphrased questions where the gold is
+retrieved but ranked #2/#5. Closing that is the live P2 lever; it needs
+query-aware body-term ranking, not more title/recency weight.
+
 ## Methodology notes / honesty
 
 - The adapter previously named nodes by bare id, blinding any title signal; it

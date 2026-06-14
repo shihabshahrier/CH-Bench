@@ -44,3 +44,30 @@ def test_retrieval_metrics_math():
     assert metrics.hit_at_k(ranked, ["c"], 5) == 1.0
     assert metrics.mrr(ranked, ["b"]) == 0.5
     assert metrics.recall_at_k(ranked, ["z"], 5) == 0.0
+
+def test_abstain_excluded_from_ranking_metrics():
+    """Abstain questions (no gold) must NOT drag ranking metrics — they have no
+    gold to rank, so recall/nDCG/mrr are undefined for them (regression for the
+    metric-artifact fix)."""
+    from bench.core.runner import QuestionResult, _aggregate
+
+    def row(qid, has_gold, recall, ndcg, mrr, expect_abstain=False):
+        return QuestionResult(
+            qid=qid, track="t", expect_abstain=expect_abstain, has_gold=has_gold,
+            recall=recall, precision=recall, hit=recall, mrr=mrr, ndcg10=ndcg,
+            correctness=None, abstained=None, abstain_correct=None,
+            latency_ms=1.0, tokens=0, answer=None, ranked_ids=[],
+        )
+
+    rows = [
+        row("g1", True, 1.0, 1.0, 1.0),
+        row("g2", True, 1.0, 1.0, 1.0),
+        row("abstain", False, 0.0, 0.0, 0.0, expect_abstain=True),
+    ]
+    agg = _aggregate(rows, judged=False)
+    # Without the fix this would be 2/3 ≈ 0.667; with it, the two gold rows = 1.0.
+    assert agg["ndcg@10"] == 1.0
+    assert agg["recall@k"] == 1.0
+    assert agg["mrr"] == 1.0
+    # Latency still covers every query (3 rows), not just the gold ones.
+    assert agg["latency_ms_p50"] == 1.0

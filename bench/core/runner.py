@@ -24,6 +24,7 @@ class QuestionResult:
     qid: str
     track: str | None
     expect_abstain: bool
+    has_gold: bool  # the question carried gold relevant_ids → counts toward ranking metrics
     recall: float
     precision: float
     hit: float
@@ -63,12 +64,18 @@ def _mean(xs: list[float]) -> float:
 
 
 def _aggregate(rows: list[QuestionResult], judged: bool) -> dict[str, float]:
+    # Ranking metrics aggregate ONLY over questions that carried gold
+    # relevant_ids. An abstain question has no gold to rank, so recall/precision/
+    # hit/mrr/ndcg are undefined for it — averaging in a spurious 0 unfairly
+    # penalized every system (and most a system that correctly abstains). Latency
+    # and tokens still cover every query.
+    ranked = [r for r in rows if r.has_gold]
     out: dict[str, float] = {
-        "recall@k": _mean([r.recall for r in rows]),
-        "precision@k": _mean([r.precision for r in rows]),
-        "hit@k": _mean([r.hit for r in rows]),
-        "mrr": _mean([r.mrr for r in rows]),
-        "ndcg@10": _mean([r.ndcg10 for r in rows]),
+        "recall@k": _mean([r.recall for r in ranked]),
+        "precision@k": _mean([r.precision for r in ranked]),
+        "hit@k": _mean([r.hit for r in ranked]),
+        "mrr": _mean([r.mrr for r in ranked]),
+        "ndcg@10": _mean([r.ndcg10 for r in ranked]),
         "latency_ms_p50": _percentile([r.latency_ms for r in rows], 50),
         "latency_ms_p95": _percentile([r.latency_ms for r in rows], 95),
         "tokens_mean": _mean([float(r.tokens) for r in rows]),
@@ -150,6 +157,7 @@ def run(
                 qid=q.id,
                 track=q.track,
                 expect_abstain=q.expect_abstain,
+                has_gold=bool(q.relevant_ids),
                 recall=metrics.recall_at_k(ranked, q.relevant_ids, k),
                 precision=metrics.precision_at_k(ranked, q.relevant_ids, k),
                 hit=metrics.hit_at_k(ranked, q.relevant_ids, k),
