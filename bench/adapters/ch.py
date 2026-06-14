@@ -71,9 +71,20 @@ class CHAdapter:
         return {"Authorization": f"Bearer {self.api_key}"}
 
     def _suite_id_from_name(self, name: str | None) -> str | None:
+        # Name is "{prefix}{id} {derived title}" — the suite id is the first
+        # token after the prefix (primary resolution is by UUID; this is the
+        # fallback when a UUID isn't in the map).
         if name and name.startswith(self.prefix):
-            return name[len(self.prefix):]
+            return name[len(self.prefix):].split(None, 1)[0]
         return None
+
+    @staticmethod
+    def _derive_title(text: str) -> str:
+        """A short human-style title from the memory's first line, so ingested
+        nodes have realistic titles a name/title ranker can use — real notes
+        have titles; bare ids unrealistically blind the title signal."""
+        first = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")
+        return " ".join(first.split()[:10])[:70]
 
     # ── Adapter contract ──
     def reset(self) -> None:
@@ -103,9 +114,11 @@ class CHAdapter:
 
     def ingest(self, memories: list[Memory]) -> None:
         for m in memories:
+            title = self._derive_title(m.text)
+            name = f"{self.prefix}{m.id}" + (f" {title}" if title else "")
             body = {
                 "type": self.node_type,
-                "name": f"{self.prefix}{m.id}",
+                "name": name,
                 "body": m.text,
                 "description": m.text[:200],
                 "properties": {"bench": True, "bench_run": self.run_id, "suite_id": m.id, **m.metadata},
