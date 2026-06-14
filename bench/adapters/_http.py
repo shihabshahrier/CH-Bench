@@ -44,6 +44,11 @@ def request(
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         raise HTTPError(e.code, body, url) from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # Network failure / read timeout — surface as a transient HTTPError
+        # (status 504) so adapters' `except HTTPError` handling treats it as a
+        # retryable miss instead of aborting the whole run on one slow request.
+        raise HTTPError(504, f"network/timeout: {e}", url) from e
     if not raw:
         return {}
     return json.loads(raw)

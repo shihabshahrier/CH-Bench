@@ -141,18 +141,19 @@ class CHAdapter:
             # not abort the whole run — score it as a miss and move on.
             return QueryResult(answer=None, sources=[], latency_ms=0.0, raw={"error": str(e)[:200]})
 
-    def _post_retry(self, url: str, json_body: dict):
+    def _post_retry(self, url: str, json_body: dict, timeout: float = 60.0):
         """POST with backoff on NIM rate limits / transient upstream errors
-        (429/500/502/503), which CH surfaces when the embed+rerank+chat chain
-        trips the 40-RPM free tier."""
+        (429/500/502/503) and network read-timeouts (504, surfaced by _http),
+        which CH hits when the embed+rerank+chat chain trips the 40-RPM free
+        tier or an Ask stalls past the socket timeout."""
         attempts = int(os.getenv("CH_RETRIES", "4"))
         delay = 3.0
         last: _http.HTTPError | None = None
         for i in range(attempts):
             try:
-                return _http.request("POST", url, headers=self._headers(), json_body=json_body)
+                return _http.request("POST", url, headers=self._headers(), json_body=json_body, timeout=timeout)
             except _http.HTTPError as e:
-                if e.status not in (429, 500, 502, 503) or i == attempts - 1:
+                if e.status not in (429, 500, 502, 503, 504) or i == attempts - 1:
                     raise
                 last = e
                 time.sleep(delay)
@@ -163,9 +164,12 @@ class CHAdapter:
 
     def _ask(self, question: str, top_k: int) -> QueryResult:
         t0 = time.perf_counter()
+        # Ask fans out to embed+rerank+(multi-)chat; under NIM rate limits a
+        # single call can exceed the default 60s, so give it a wider ceiling.
         payload = self._post_retry(
             f"{self.base_url}/v1/graph/ask",
             {"query": question, "top_k": top_k, "mode": self.ask_mode},
+            timeout=float(os.getenv("CH_ASK_TIMEOUT", "150")),
         )
         dt = (time.perf_counter() - t0) * 1000
         answer = payload.get("answer") if isinstance(payload, dict) else None
