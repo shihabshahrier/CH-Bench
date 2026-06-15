@@ -14,6 +14,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import adapters, injection, suites
 from .core.judge import Judge
@@ -48,7 +49,31 @@ def _cmd_run(args: argparse.Namespace) -> int:
     suite = suites.build(args.suite)
     judge = Judge()
     if args.no_judge:
-        judge = Judge(base_url="", model="", api_key="")  # force-disabled
+        # Judge() falls back to JUDGE_* env when its args are empty, so passing
+        # "" does NOT disable it (it silently re-enables from .env and fires a
+        # judge LLM call per question). Drop the env for this process so the
+        # constructed judge is genuinely disabled.
+        for _k in ("JUDGE_BASE_URL", "JUDGE_MODEL", "JUDGE_API_KEY"):
+            os.environ.pop(_k, None)
+        judge = Judge(base_url="", model="", api_key="")  # now genuinely disabled
+        assert not judge.enabled, "judge should be disabled under --no-judge"
+
+    # Record the run's scope so the exporter can keep distinct runs of the same
+    # system+suite apart (neutral vs realistic titles, retrieval-only vs answer).
+    cfg = {"system": args.system, "suite": args.suite, "k": args.k, "seed": args.seed}
+    if os.getenv("CH_RETRIEVAL_ONLY") == "1":
+        cfg["retrieval_only"] = True
+    if args.system == "ch":
+        cfg["titles"] = "neutral" if os.getenv("CH_DERIVE_TITLE") == "0" else "realistic"
+    if judge.enabled:
+        # Attribute the answer scores to the exact judge that produced them —
+        # different judge model/host ⇒ different correctness, so a scorecard is
+        # only comparable against another run with the same attribution. Host
+        # only, never the key.
+        cfg["judge_model"] = judge.model
+        cfg["judge_base"] = urlsplit(judge.base_url).netloc or judge.base_url
+    if args.note:
+        cfg["note"] = args.note
 
     card = run(
         adapter,
@@ -57,7 +82,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         limit=args.limit,
         judge=judge,
         progress=not args.quiet,
-        config={"system": args.system, "suite": args.suite, "k": args.k},
+        config=cfg,
     )
 
     if not args.quiet:
@@ -99,10 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--system", required=True, help=f"one of: {', '.join(adapters.names())}")
     r.add_argument("--suite", required=True, help=f"one of: {', '.join(suites.names())}")
     r.add_argument("--k", type=int, default=10, help="top-k for retrieval + metrics (default 10)")
+    r.add_argument("--seed", type=int, default=0, help="seed for bootstrap CIs (recorded in scorecard; default 0)")
     r.add_argument("--limit", type=int, default=None, help="cap number of questions (smoke runs)")
     r.add_argument("--no-judge", action="store_true", help="disable LLM-judge correctness scoring")
     r.add_argument("--out", default="results", help="output dir for scorecards (default results/; '' to skip)")
     r.add_argument("--quiet", action="store_true", help="suppress progress + stdout scorecard")
+    r.add_argument("--note", default="", help="free-text scope tag recorded in the scorecard (e.g. 'fullrun')")
     r.set_defaults(func=_cmd_run)
 
     inj = sub.add_parser("inject", help="run the prompt-injection-via-shared-memory regression track")

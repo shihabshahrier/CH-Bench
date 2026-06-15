@@ -63,6 +63,7 @@ class LongMemEvalSuite:
                             id=self._turn_id(qid, s_idx, t_idx),
                             text=(f"{role}: {content}" if role else content),
                             metadata={"question_id": qid, "session": s_idx},
+                            group=qid,  # each question's haystack is its own isolated corpus
                         )
                     )
         return out
@@ -91,6 +92,7 @@ class LongMemEvalSuite:
                     track=item.get("question_type", "longmemeval"),
                     expect_abstain=(answer is None or str(answer).strip().lower() in {"", "no answer", "n/a"}),
                     metadata={"question_type": item.get("question_type")},
+                    group=qid,
                 )
             )
         return out

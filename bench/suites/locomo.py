@@ -63,6 +63,7 @@ class LoCoMoSuite:
                     id=f"{s_idx}:{did}",
                     text=(f"{speaker}: {text}" if speaker else text),
                     metadata={"sample": s_idx, "dia_id": did},
+                    group=str(s_idx),  # each conversation sample is its own isolated corpus
                 )
             )
         return out
@@ -91,6 +92,7 @@ class LoCoMoSuite:
                         track=str(qa.get("category", "locomo")),
                         expect_abstain=(ans is None),
                         metadata={"category": qa.get("category")},
+                        group=str(s_idx),
                     )
                 )
         return out

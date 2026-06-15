@@ -44,7 +44,7 @@ class Mem0Adapter:
     def ingest(self, memories: list[Memory]) -> None:
         last: Memory | None = None
         for m in memories:
-            _http.request(
+            _http.request_retry(
                 "POST",
                 f"{self.base_url}/v1/memories/",
                 headers=self._h(),
@@ -79,7 +79,7 @@ class Mem0Adapter:
 
     def query(self, question: str, top_k: int) -> QueryResult:
         t0 = time.perf_counter()
-        payload = _http.request(
+        payload = _http.request_retry(
             "POST",
             f"{self.base_url}/v1/memories/search/",
             headers=self._h(),

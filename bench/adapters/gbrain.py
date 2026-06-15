@@ -38,6 +38,21 @@ from ..core.types import Memory, QueryResult, RetrievedSource
 _LINE = re.compile(r"^\[([0-9.]+)\]\s+(\S+)\s+--")
 
 
+def _safe_slug(suite_id: str) -> str:
+    """Pre-normalize a suite id into a token GBrain's slugifier leaves
+    unchanged, so the slug it returns on query maps cleanly back.
+
+    GBrain slugifies every put key (`slugifySegment`): NFD-strip accents,
+    lowercase, keep only [alnum . _ - space + CJK], spaces→hyphens, collapse/trim
+    hyphens. A LoCoMo id like '0:D1:2' would become '0d12' (colons dropped,
+    cased lost) — which never equals the stored suite id, so recall scored 0.
+    Mapping every non-kept char to a hyphen up front yields an idempotent slug
+    ('0:D1:2' → '0-d1-2') that survives GBrain's transform intact.
+    """
+    s = re.sub(r"[^a-z0-9._-]+", "-", suite_id.lower())
+    return re.sub(r"-+", "-", s).strip("-")
+
+
 class GBrainAdapter:
     name = "gbrain"
 
@@ -53,6 +68,8 @@ class GBrainAdapter:
         self.embed_dim = os.getenv("GBRAIN_EMBEDDING_DIMENSIONS", "1024")
         self.timeout = timeout
         self._ids: set[str] = set()
+        # slug GBrain stores → original suite id (recall scoring maps back).
+        self._slug_to_suite: dict[str, str] = {}
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -77,13 +94,16 @@ class GBrainAdapter:
             "--skip-embed-check",
         ])
         self._ids.clear()
+        self._slug_to_suite.clear()
 
     def ingest(self, memories: list[Memory]) -> None:
         if self.dry_run:
             return
         for m in memories:
-            self._run(["put", m.id, "--content", m.text])
-            self._ids.add(m.id)
+            slug = _safe_slug(m.id)
+            self._run(["put", slug, "--content", m.text])
+            self._ids.add(slug)
+            self._slug_to_suite[slug] = m.id
         # GBrain defers embedding on put; generate them in one batch.
         self._run(["embed", "--all"])
 
@@ -99,7 +119,8 @@ class GBrainAdapter:
             if not mt:
                 continue
             score, slug = float(mt.group(1)), mt.group(2)
-            sid = slug if slug in self._ids else None
+            # GBrain may echo the slug in any case; normalize before mapping back.
+            sid = self._slug_to_suite.get(slug) or self._slug_to_suite.get(slug.lower())
             sources.append(RetrievedSource(id=sid, text=slug, score=score))
             if len(sources) >= top_k:
                 break

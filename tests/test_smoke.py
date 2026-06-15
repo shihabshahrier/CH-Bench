@@ -54,7 +54,7 @@ def test_abstain_excluded_from_ranking_metrics():
     def row(qid, has_gold, recall, ndcg, mrr, expect_abstain=False):
         return QuestionResult(
             qid=qid, track="t", expect_abstain=expect_abstain, has_gold=has_gold,
-            recall=recall, precision=recall, hit=recall, mrr=mrr, ndcg10=ndcg,
+            recall=recall, precision=recall, hit=recall, mrr=mrr, ndcg_at_k=ndcg,
             correctness=None, abstained=None, abstain_correct=None,
             latency_ms=1.0, tokens=0, answer=None, ranked_ids=[],
         )
@@ -66,7 +66,7 @@ def test_abstain_excluded_from_ranking_metrics():
     ]
     agg = _aggregate(rows, judged=False)
     # Without the fix this would be 2/3 ≈ 0.667; with it, the two gold rows = 1.0.
-    assert agg["ndcg@10"] == 1.0
+    assert agg["ndcg@k"] == 1.0
     assert agg["recall@k"] == 1.0
     assert agg["mrr"] == 1.0
     # Latency still covers every query (3 rows), not just the gold ones.

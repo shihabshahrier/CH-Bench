@@ -60,18 +60,31 @@ class CKAdapter:
         self.project = self.home / "benchmark"
         self.timeout = timeout
         self._ids: set[str] = set()
+        # filename stem (colon-safe) → original suite id, for recall scoring.
+        self._stem_to_suite: dict[str, str] = {}
 
     def reset(self) -> None:
         if self.home.exists():
             shutil.rmtree(self.home, ignore_errors=True)
         self.project.mkdir(parents=True, exist_ok=True)
         self._ids.clear()
+        self._stem_to_suite.clear()
+
+    @staticmethod
+    def _safe_stem(suite_id: str) -> str:
+        # The filename regex (_FILE_RE) only recognizes [A-Za-z0-9_.-], so a
+        # suite id with a colon (LoCoMo's '0:D1:2') becomes an unparseable
+        # filename — the grep hit can never map back and recall scores a bogus 0.
+        # Normalize to a colon-free stem and remember the mapping.
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", suite_id).strip("-")
 
     def ingest(self, memories: list[Memory]) -> None:
         for m in memories:
-            # Filename is the suite id so a grep hit maps straight back.
-            (self.project / f"{m.id}.md").write_text(f"# {m.id}\n\n{m.text}\n")
-            self._ids.add(m.id)
+            # Filename is a colon-safe form of the suite id so a grep hit maps back.
+            stem = self._safe_stem(m.id)
+            (self.project / f"{stem}.md").write_text(f"# {m.id}\n\n{m.text}\n")
+            self._ids.add(stem)
+            self._stem_to_suite[stem] = m.id
 
     def query(self, question: str, top_k: int) -> QueryResult:
         t0 = time.perf_counter()
@@ -96,7 +109,10 @@ class CKAdapter:
                 tally[stem] = tally.get(stem, 0) + 1
         dt = (time.perf_counter() - t0) * 1000
         ranked = sorted(tally, key=lambda s: tally[s], reverse=True)
-        sources = [RetrievedSource(id=s, score=float(tally[s])) for s in ranked[:top_k]]
+        sources = [
+            RetrievedSource(id=self._stem_to_suite.get(s, s), score=float(tally[s]))
+            for s in ranked[:top_k]
+        ]
         return QueryResult(answer=None, sources=sources, latency_ms=dt, raw={"matched": len(ranked)})
 
     def close(self) -> None:

@@ -28,6 +28,12 @@ class Memory:
     # Temporal/update suites rely on `timestamp` ordering; track scoring on
     # `track`. Adapters may forward whichever fields the system understands.
     metadata: dict = field(default_factory=dict)
+    # Isolation group: when set, the runner's grouped mode reset+ingests each
+    # group's memories separately and only queries that group's questions
+    # against it — the standard per-conversation (LoCoMo) / per-question-haystack
+    # (LongMemEval) protocol, instead of pooling every group into one corpus
+    # (which both inflates the haystack non-standardly and is infeasibly large).
+    group: str | None = None
 
 
 @dataclass(slots=True)
@@ -48,6 +54,9 @@ class Question:
     track: str | None = None
     expect_abstain: bool = False
     metadata: dict = field(default_factory=dict)
+    # Isolation group this question is scored within (see Memory.group). Only the
+    # memories sharing this group are ingested when the question is asked.
+    group: str | None = None
 
 
 @dataclass(slots=True)

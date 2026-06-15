@@ -7,9 +7,14 @@ response body attached so adapter failures are debuggable.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlencode
+
+# Transient statuses worth retrying: provider rate limits + upstream hiccups +
+# the 504 we synthesize for network/read timeouts.
+_RETRYABLE = {429, 500, 502, 503, 504}
 
 
 class HTTPError(RuntimeError):
@@ -52,3 +57,45 @@ def request(
     if not raw:
         return {}
     return json.loads(raw)
+
+
+def _retry_after(err: "HTTPError", default: float) -> float:
+    """Seconds to wait before retrying. Honors a provider's
+    `retryAfterSeconds` (supermemory) in the JSON body when present."""
+    try:
+        body = json.loads(err.body)
+        ra = body.get("retryAfterSeconds") or body.get("retry_after")
+        if ra:
+            return float(ra)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return default
+
+
+def request_retry(
+    method: str,
+    url: str,
+    *,
+    retries: int = 5,
+    backoff: float = 2.0,
+    **kwargs,
+) -> dict | list:
+    """`request` with backoff on transient failures (429 rate limits, 5xx,
+    network/read timeouts). A single slow or throttled call must not abort a
+    whole benchmark run — the adapters scoring competitors rely on this so one
+    provider hiccup doesn't zero a system's recall."""
+    delay = backoff
+    last: HTTPError | None = None
+    for attempt in range(retries):
+        try:
+            return request(method, url, **kwargs)
+        except HTTPError as e:
+            if e.status not in _RETRYABLE or attempt == retries - 1:
+                raise
+            last = e
+            wait = _retry_after(e, delay) if e.status == 429 else delay
+            time.sleep(min(wait, 90.0))
+            delay *= 1.8
+    if last:
+        raise last
+    return {}

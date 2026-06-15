@@ -61,6 +61,12 @@ class CHAdapter:
             if retrieval_only is not None
             else os.getenv("CH_RETRIEVAL_ONLY", "") == "1"
         )
+        # Title fairness: the bench injects a derived title into the node name so
+        # CH's title-overlap ranker has a realistic signal (real notes have
+        # titles). Set CH_DERIVE_TITLE=0 for a neutral run (name = id only) so
+        # CH's ranking advantage can't be attributed to a bench-handed title that
+        # competitors' adapters don't replicate.
+        self.derive_title = os.getenv("CH_DERIVE_TITLE", "1") == "1"
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.prefix = f"bench-{self.run_id}-"
         self._sys_to_suite: dict[str, str] = {}
@@ -114,7 +120,7 @@ class CHAdapter:
 
     def ingest(self, memories: list[Memory]) -> None:
         for m in memories:
-            title = self._derive_title(m.text)
+            title = self._derive_title(m.text) if self.derive_title else ""
             name = f"{self.prefix}{m.id}" + (f" {title}" if title else "")
             body = {
                 "type": self.node_type,
@@ -147,7 +153,7 @@ class CHAdapter:
             time.sleep(self.query_delay)
         try:
             if self.retrieval_only:
-                return self._semantic(question, top_k)
+                return self._retrieve(question, top_k)
             return self._ask(question, top_k)
         except _http.HTTPError as e:
             # A rate-limited / transient upstream failure on one question must
@@ -194,21 +200,24 @@ class CHAdapter:
             )
         return QueryResult(answer=answer, sources=sources, latency_ms=dt, tokens=0, raw=payload if isinstance(payload, dict) else {})
 
-    def _semantic(self, question: str, top_k: int) -> QueryResult:
+    def _retrieve(self, question: str, top_k: int) -> QueryResult:
+        # Full retrieval pipeline (hybrid + rerank + graph/boosts) WITHOUT the
+        # LLM answer — the fair retrieval-quality surface. /v1/semantic is bare
+        # vector cosine and would undersell CH's ranking; retrieve_only returns
+        # the same ranked sources the answer path uses, minus the tongue.
         t0 = time.perf_counter()
-        payload = _http.request(
-            "GET",
-            f"{self.base_url}/v1/semantic",
-            headers=self._headers(),
-            params={"q": question, "limit": top_k},
+        payload = self._post_retry(
+            f"{self.base_url}/v1/graph/ask",
+            {"query": question, "top_k": top_k, "mode": self.ask_mode, "retrieve_only": True},
+            timeout=float(os.getenv("CH_ASK_TIMEOUT", "150")),
         )
         dt = (time.perf_counter() - t0) * 1000
-        rows = payload.get("data") or [] if isinstance(payload, dict) else []
+        rows = (payload.get("sources") or []) if isinstance(payload, dict) else []
         sources = []
-        for r in rows:
-            sid = self._sys_to_suite.get(str(r.get("id"))) or self._suite_id_from_name(r.get("name"))
+        for s in rows:
+            sid = self._sys_to_suite.get(str(s.get("id"))) or self._suite_id_from_name(s.get("name"))
             sources.append(
-                RetrievedSource(id=sid, text=r.get("name", ""), score=float(r.get("similarity", 0.0)))
+                RetrievedSource(id=sid, text=s.get("name", ""), score=float(s.get("similarity", 0.0)))
             )
         return QueryResult(answer=None, sources=sources, latency_ms=dt, tokens=0, raw={"n": len(rows)})
 

@@ -12,11 +12,11 @@ from pathlib import Path
 
 from .core.runner import Scorecard
 
-_PCT = {"recall@k", "precision@k", "hit@k", "mrr", "ndcg@10", "correctness", "abstention_accuracy", "false_abstention"}
+_PCT = {"recall@k", "precision@k", "hit@k", "mrr", "ndcg@k", "ndcg@10", "correctness", "abstention_accuracy", "false_abstention"}
 
 
 def _fmt(key: str, val: float) -> str:
-    if key in _PCT:
+    if key in _PCT or key.endswith(("_ci_lo", "_ci_hi")):
         return f"{val * 100:.1f}%"
     if key.startswith("latency"):
         return f"{val:.0f}ms"
@@ -52,7 +52,7 @@ def to_markdown(card: Scorecard) -> str:
     if card.tracks:
         lines.append("## Per track")
         lines.append("")
-        cols = ["recall@k", "ndcg@10", "mrr", "hit@k"]
+        cols = ["recall@k", "ndcg@k", "mrr", "hit@k"]
         if card.judged:
             cols += ["correctness", "abstention_accuracy"]
         header = "| track | " + " | ".join(cols) + " | latency_p50 |"

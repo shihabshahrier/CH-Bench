@@ -43,7 +43,7 @@ def build_table(cards: dict[str, dict], suite: str) -> str:
             {
                 "system": sys,
                 "recall": m.get("recall@k", 0.0),
-                "ndcg": m.get("ndcg@10", 0.0),
+                "ndcg": m.get("ndcg@k", m.get("ndcg@10", 0.0)),
                 "mrr": m.get("mrr", 0.0),
                 "hit": m.get("hit@k", 0.0),
                 "correctness": m.get("correctness") if answers else None,
@@ -63,7 +63,7 @@ def build_table(cards: dict[str, dict], suite: str) -> str:
     k = rows[0]["k"] if rows else 0
     out.append(f"{len(rows)} systems · {n} questions · k={k} · LLM-judge: qwen3.5-397b (NVIDIA NIM)")
     out.append("")
-    out.append("| system | recall@k | nDCG@10 | MRR | hit@k | answer correctness | abstention | latency p50 |")
+    out.append("| system | recall@k | nDCG@k | MRR | hit@k | answer correctness | abstention | latency p50 |")
     out.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for r in rows:
         out.append(

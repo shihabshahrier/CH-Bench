@@ -51,7 +51,7 @@ class SupermemoryAdapter:
     def ingest(self, memories: list[Memory]) -> None:
         last: Memory | None = None
         for m in memories:
-            _http.request(
+            _http.request_retry(
                 "POST",
                 f"{self.base_url}{self.add_path}",
                 headers=self._h(),
@@ -86,7 +86,7 @@ class SupermemoryAdapter:
 
     def query(self, question: str, top_k: int) -> QueryResult:
         t0 = time.perf_counter()
-        payload = _http.request(
+        payload = _http.request_retry(
             "POST",
             f"{self.base_url}{self.search_path}",
             headers=self._h(),
