@@ -11,11 +11,11 @@ scoped below.
 | reconsolidation (retrieval strengthens a trace) | bump `access_count` + `last_accessed` on the sources that grounded an answer | **shipped** (`a3e1e67`) |
 | Hebbian salience ("what fires together / gets used, strengthens") | `salienceScore` = log-compressed access_count, a rerank boost | **shipped** |
 | Ebbinghaus decay / forgetting | recency + salience ranking → old, never-retrieved memories *sink* (soft, non-destructive) | **shipped (soft)** |
+| time-since-last-access decay (full forgetting curve) | `accessFreshness` = exp decay (30-day half-life) multiplying salience — a once-hot memory cools if not re-retrieved | **shipped** |
 | spreading activation | graph edges (1-hop neighborhood in the answer context) | pre-existing |
 | episodic → semantic consolidation | episodes distilled into nodes | pre-existing (manual) |
 | schema | communities (GraphRAG-lite summaries) | pre-existing |
-| sleep-phase (scheduled) consolidation | a periodic job running distill + community refresh | **deferred** (needs a scheduler) |
-| time-since-last-access decay | use `last_accessed` (now recorded) in the decay term | **deferred** |
+| sleep-phase (scheduled) consolidation | a periodic job running distill + community refresh | **deferred — by design** (mechanism exists + is API-triggerable; only the scheduler wiring remains, which needs a service-handle exposed from `router.New` — a deliberate small refactor, not a rushed bolt-on) |
 
 ## What shipped + why this shape
 
